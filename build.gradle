@@ -1,0 +1,70 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.5.7'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'io.wisoft'
+version = '0.0.1-SNAPSHOT'
+description = 'Payment server for the Ignoa auction marketplace'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+// Docker Engine 29는 API 1.32 클라이언트를 거부한다. 1.21.4부터 1.44로 협상한다.
+ext['testcontainers.version'] = '1.21.4'
+
+dependencies {
+	// 웹, 서버
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+
+	// 데이터
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// 유효성 검사
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// Shedlock
+	implementation 'net.javacrumbs.shedlock:shedlock-spring:6.0.2'
+	implementation 'net.javacrumbs.shedlock:shedlock-provider-jdbc-template:6.0.2'
+
+	// 측정
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'io.micrometer:micrometer-registry-prometheus'
+
+	// 개발 편의
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+
+	// 테스트
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	// 테스트 인프라
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:mysql'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+tasks.named('jar') {
+	enabled = false
+}
