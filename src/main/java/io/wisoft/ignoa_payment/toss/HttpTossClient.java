@@ -12,6 +12,7 @@ public class HttpTossClient implements TossClient {
     private static final String IDEMPOTENCY_KEY = "Idempotency-Key";
     private static final String ALREADY_PROCESSED_PAYMENT = "ALREADY_PROCESSED_PAYMENT";
     private static final String NOT_FOUND_PAYMENT_SESSION = "NOT_FOUND_PAYMENT_SESSION";
+    private static final String NOT_FOUND_PAYMENT = "NOT_FOUND_PAYMENT";
 
     private final RestClient confirmClient; // 승인·취소(읽기 20초)
     private final RestClient lookupClient;  // 조회(읽기 5초)
@@ -60,10 +61,12 @@ public class HttpTossClient implements TossClient {
                         if (status.is2xxSuccessful()) {
                             return new TossLookupResult.Found(response.bodyTo(TossPayment.class));
                         }
-                        if (status.value() == 404) {
+                        // 404라도 NOT_FOUND_MERCHANT 같은 설정 오류는 "결제 없음"이 아니다. 판단을 보류한다.
+                        TossError error = readError(response, status);
+                        if (status.value() == 404 && NOT_FOUND_PAYMENT.equals(error.code())) {
                             return new TossLookupResult.NotFound();
                         }
-                        return new TossLookupResult.Failed("HTTP " + status.value());
+                        return new TossLookupResult.Failed("HTTP " + status.value() + " " + error.code());
                     });
         } catch (RestClientException e) {
             log.warn("Toss 결제 조회 실패: orderId={}, reason={}", orderId, e.getMessage());

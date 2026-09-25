@@ -161,6 +161,16 @@ class HttpTossClientTest {
     }
 
     @Test
+    void 조회_404라도_결제_없음_코드가_아니면_Failed다() {
+        // 키·상점 설정 오류를 "결제 없음"으로 오인하면 재조회가 성공한 결제를 만료 처리할 수 있다.
+        server.expect(requestTo(BASE_URL + "/v1/payments/orders/IGN-1"))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"NOT_FOUND_MERCHANT\",\"message\":\"존재하지 않는 상점 정보 입니다.\"}"));
+
+        assertThat(client.getByOrderId("IGN-1")).isInstanceOf(TossLookupResult.Failed.class);
+    }
+
+    @Test
     void 조회_5xx는_Failed다() {
         server.expect(requestTo(BASE_URL + "/v1/payments/orders/IGN-1"))
                 .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
