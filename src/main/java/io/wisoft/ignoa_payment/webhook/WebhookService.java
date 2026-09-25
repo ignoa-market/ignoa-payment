@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.wisoft.ignoa_payment.global.exception.BusinessException;
 import io.wisoft.ignoa_payment.global.exception.ErrorCode;
+import io.wisoft.ignoa_payment.global.metrics.PaymentMetrics;
 import io.wisoft.ignoa_payment.payment.entity.Payment;
 import io.wisoft.ignoa_payment.payment.repository.PaymentRepository;
 import io.wisoft.ignoa_payment.payment.service.TossResultApplier;
@@ -30,6 +31,7 @@ public class WebhookService {
     private final TossClient tossClient;
     private final TossResultApplier tossResultApplier;
     private final ObjectMapper objectMapper;
+    private final PaymentMetrics paymentMetrics;
 
     public WebhookResult handle(String rawBody) {
         ParsedWebhook parsed = parse(rawBody);
@@ -37,6 +39,7 @@ public class WebhookService {
 
         WebhookResult result = process(parsed);
         webhookEventRecorder.complete(eventId, result);
+        paymentMetrics.recordWebhook(parsed.eventType(), result);
 
         if (result == WebhookResult.FAILED) {
             // 500을 돌려 Toss가 재전송하게 한다(최대 7회).

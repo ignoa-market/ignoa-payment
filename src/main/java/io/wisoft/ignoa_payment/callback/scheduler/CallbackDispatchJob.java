@@ -6,6 +6,7 @@ import io.wisoft.ignoa_payment.callback.entity.PaymentCallback;
 import io.wisoft.ignoa_payment.callback.repository.PaymentCallbackRepository;
 import io.wisoft.ignoa_payment.callback.service.CallbackOutcome;
 import io.wisoft.ignoa_payment.callback.service.CallbackService;
+import io.wisoft.ignoa_payment.global.metrics.PaymentMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -24,6 +25,7 @@ public class CallbackDispatchJob {
     private final PaymentCallbackRepository callbackRepository;
     private final ApiCallbackClient apiCallbackClient;
     private final CallbackService callbackService;
+    private final PaymentMetrics paymentMetrics;
 
     // HTTP 호출은 트랜잭션 밖에서 하고, 결과 기록만 CallbackService의 트랜잭션으로 한다.
     public void execute(LocalDateTime now) {
@@ -36,7 +38,9 @@ public class CallbackDispatchJob {
         int sent = 0;
         for (PaymentCallback callback : due) {
             CallbackOutcome outcome = apiCallbackClient.send(callback.getTradeId(), callback.getPayload());
-            if (callbackService.record(callback.getId(), outcome, now) == CallbackStatus.SENT) {
+            CallbackStatus status = callbackService.record(callback.getId(), outcome, now);
+            paymentMetrics.recordCallback(status);
+            if (status == CallbackStatus.SENT) {
                 sent++;
             }
         }

@@ -2,6 +2,7 @@ package io.wisoft.ignoa_payment.payment.service;
 
 import io.wisoft.ignoa_payment.global.exception.BusinessException;
 import io.wisoft.ignoa_payment.global.exception.ErrorCode;
+import io.wisoft.ignoa_payment.global.metrics.PaymentMetrics;
 import io.wisoft.ignoa_payment.payment.dto.PaymentConfirmRequest;
 import io.wisoft.ignoa_payment.payment.dto.PaymentResultResponse;
 import io.wisoft.ignoa_payment.payment.entity.FailureCode;
@@ -28,6 +29,7 @@ public class PaymentFacade {
     private final PaymentService paymentService;
     private final TossResultApplier tossResultApplier;
     private final TossClient tossClient;
+    private final PaymentMetrics paymentMetrics;
 
     public PaymentResultResponse confirm(PaymentConfirmRequest request) {
         LocalDateTime now = LocalDateTime.now();
@@ -36,7 +38,9 @@ public class PaymentFacade {
         validateOwnership(payment, request);
 
         if (payment.getStatus() != PaymentStatus.READY) {
-            return PaymentResultResponse.forConfirm(payment);
+            PaymentResultResponse response = PaymentResultResponse.forConfirm(payment);
+            paymentMetrics.recordConfirm(response.status());
+            return response;
         }
 
         if (!payment.getAmount().equals(request.amount())) {
@@ -95,6 +99,8 @@ public class PaymentFacade {
     }
 
     private PaymentResultResponse reload(Payment payment) {
-        return PaymentResultResponse.forConfirm(paymentReader.getById(payment.getId()));
+        PaymentResultResponse response = PaymentResultResponse.forConfirm(paymentReader.getById(payment.getId()));
+        paymentMetrics.recordConfirm(response.status());
+        return response;
     }
 }

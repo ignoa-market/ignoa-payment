@@ -1,5 +1,6 @@
 package io.wisoft.ignoa_payment.payment.scheduler;
 
+import io.wisoft.ignoa_payment.global.metrics.PaymentMetrics;
 import io.wisoft.ignoa_payment.payment.entity.FailureCode;
 import io.wisoft.ignoa_payment.payment.entity.Payment;
 import io.wisoft.ignoa_payment.payment.entity.PaymentStatus;
@@ -33,6 +34,7 @@ public class ConfirmReconcileJob {
     private final PaymentService paymentService;
     private final TossResultApplier tossResultApplier;
     private final TossClient tossClient;
+    private final PaymentMetrics paymentMetrics;
 
     public void execute(LocalDateTime now) {
         List<Payment> targets = paymentRepository.findByStatusAndConfirmRequestedAtBefore(
@@ -48,6 +50,7 @@ public class ConfirmReconcileJob {
 
             if (lookup instanceof TossLookupResult.Failed failed) {
                 lookupFailed++;
+                paymentMetrics.recordReconcile("LOOKUP_FAILED");
                 log.warn("미확정 결제 재조회 실패: orderId={}, reason={}", payment.getOrderId(), failed.reason());
                 continue;
             }
@@ -55,6 +58,9 @@ public class ConfirmReconcileJob {
                 tossResultApplier.apply(payment.getId(), found.payment(), now);
             }
             expireIfTooOld(payment, now);
+            paymentMetrics.recordReconcile(paymentRepository.findById(payment.getId())
+                    .map(p -> p.getStatus().name())
+                    .orElse("MISSING"));
         }
         log.info("미확정 결제 재조회 완료: target={}, lookupFailed={}", targets.size(), lookupFailed);
     }
