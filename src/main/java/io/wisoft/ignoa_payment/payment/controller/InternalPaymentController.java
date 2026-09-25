@@ -1,10 +1,12 @@
 package io.wisoft.ignoa_payment.payment.controller;
 
 import io.wisoft.ignoa_payment.global.common.ApiResponse;
+import io.wisoft.ignoa_payment.payment.dto.PaymentConfirmRequest;
 import io.wisoft.ignoa_payment.payment.dto.PaymentPrepareRequest;
 import io.wisoft.ignoa_payment.payment.dto.PaymentPrepareResponse;
 import io.wisoft.ignoa_payment.payment.dto.PaymentResultResponse;
 import io.wisoft.ignoa_payment.payment.entity.Payment;
+import io.wisoft.ignoa_payment.payment.service.PaymentFacade;
 import io.wisoft.ignoa_payment.payment.service.PaymentReader;
 import io.wisoft.ignoa_payment.payment.service.PaymentService;
 import jakarta.validation.Valid;
@@ -25,6 +27,7 @@ public class InternalPaymentController {
 
     private final PaymentService paymentService;
     private final PaymentReader paymentReader;
+    private final PaymentFacade paymentFacade;
 
     @PostMapping
     public ResponseEntity<ApiResponse<PaymentPrepareResponse>> prepare(
@@ -33,6 +36,12 @@ public class InternalPaymentController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(ApiResponse.of(PaymentPrepareResponse.from(payment), "결제를 준비했습니다."));
+    }
+
+    @PostMapping("/confirm")
+    public ResponseEntity<ApiResponse<PaymentResultResponse>> confirm(
+            @Valid @RequestBody PaymentConfirmRequest request) {
+        return ResponseEntity.ok(ApiResponse.of(paymentFacade.confirm(request), "결제 승인 요청을 처리했습니다."));
     }
 
     @GetMapping("/{orderId}")

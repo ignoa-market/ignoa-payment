@@ -1,6 +1,7 @@
 package io.wisoft.ignoa_payment.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.wisoft.ignoa_payment.toss.TossClient;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -8,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -38,6 +40,10 @@ public abstract class IntegrationTestSupport {
 
     @Autowired
     protected JdbcTemplate jdbcTemplate;
+
+    // 모든 통합 테스트에서 실제 Toss 호출을 막는다.
+    @MockitoBean
+    protected TossClient tossClient;
 
     @AfterEach
     void cleanUpDatabase() {
