@@ -1,6 +1,7 @@
 package io.wisoft.ignoa_payment.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.wisoft.ignoa_payment.callback.client.ApiCallbackClient;
 import io.wisoft.ignoa_payment.toss.TossClient;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,10 @@ public abstract class IntegrationTestSupport {
     // 모든 통합 테스트에서 실제 Toss 호출을 막는다.
     @MockitoBean
     protected TossClient tossClient;
+
+    // 모든 통합 테스트에서 실제 api 호출을 막는다.
+    @MockitoBean
+    protected ApiCallbackClient apiCallbackClient;
 
     @AfterEach
     void cleanUpDatabase() {
