@@ -40,7 +40,7 @@ public class CloudFrontOriginFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return !enabled
-                || !request.getRequestURI().startsWith(PUBLIC_PATH_PREFIX);
+                || !RequestPaths.normalized(request).startsWith(PUBLIC_PATH_PREFIX);
     }
 
     @Override

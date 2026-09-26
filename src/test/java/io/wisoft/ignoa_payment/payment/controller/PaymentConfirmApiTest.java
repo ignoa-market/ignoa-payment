@@ -226,6 +226,22 @@ class PaymentConfirmApiTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 다른_주문에_이미_쓰인_payment_key면_409이고_Toss를_호출하지_않는다() throws Exception {
+        Payment first = prepare();
+        Payment other = paymentService.prepare(20L, AMOUNT, "다른 상품");
+        given(tossClient.confirm("pk", first.getOrderId(), AMOUNT))
+                .willReturn(new TossConfirmResult.Unknown("timeout"));
+        confirm(TRADE_ID, first.getOrderId(), "pk", AMOUNT);
+
+        confirm(20L, other.getOrderId(), "pk", AMOUNT)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PAYMENT_KEY_MISMATCH"));
+
+        verify(tossClient, never()).confirm("pk", other.getOrderId(), AMOUNT);
+        assertThat(paymentReader.getById(other.getId()).getStatus()).isEqualTo(PaymentStatus.READY);
+    }
+
+    @Test
     void 없는_order_id면_404다() throws Exception {
         confirm(TRADE_ID, "IGN-none", "pk", AMOUNT)
                 .andExpect(status().isNotFound())

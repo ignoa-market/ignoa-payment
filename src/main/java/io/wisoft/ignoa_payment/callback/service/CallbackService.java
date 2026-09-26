@@ -27,11 +27,6 @@ public class CallbackService {
 
         switch (outcome.type()) {
             case SUCCESS -> callback.markSent();
-            case PERMANENT -> {
-                callback.markDead(outcome.error());
-                log.error("결제 결과 콜백 영구 실패: callbackId={}, tradeId={}, error={}, action=GET /internal/payments로 수동 대조",
-                        callbackId, callback.getTradeId(), outcome.error());
-            }
             case RETRYABLE -> {
                 if (!now.isBefore(callback.getFirstEnqueuedAt().plus(MAX_RETRY_WINDOW))) {
                     callback.markDead(outcome.error());

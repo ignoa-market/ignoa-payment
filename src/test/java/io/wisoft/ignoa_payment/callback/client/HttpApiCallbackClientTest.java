@@ -48,10 +48,13 @@ class HttpApiCallbackClientTest {
     }
 
     @Test
-    void 일반_4xx는_PERMANENT다() {
+    void 클라이언트_오류_4xx도_계약대로_RETRYABLE이다() {
+        // 계약 5: 200을 못 받으면 24시간까지 재시도. 401(키 교체 중)·404(배포 전)는 일시적일 수 있다.
         server.expect(requestTo(URL)).andRespond(withStatus(HttpStatus.NOT_FOUND));
+        server.expect(requestTo(URL)).andRespond(withStatus(HttpStatus.UNAUTHORIZED));
 
-        assertThat(client.send(10L, "{}").type()).isEqualTo(CallbackOutcome.Type.PERMANENT);
+        assertThat(client.send(10L, "{}").type()).isEqualTo(CallbackOutcome.Type.RETRYABLE);
+        assertThat(client.send(10L, "{}").type()).isEqualTo(CallbackOutcome.Type.RETRYABLE);
     }
 
     @Test

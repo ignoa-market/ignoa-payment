@@ -6,8 +6,7 @@ public record CallbackOutcome(
 ) {
     public enum Type {
         SUCCESS,
-        RETRYABLE,
-        PERMANENT
+        RETRYABLE
     }
 
     public static CallbackOutcome success() {
@@ -16,9 +15,5 @@ public record CallbackOutcome(
 
     public static CallbackOutcome retryable(String error) {
         return new CallbackOutcome(Type.RETRYABLE, error);
-    }
-
-    public static CallbackOutcome permanent(String error) {
-        return new CallbackOutcome(Type.PERMANENT, error);
     }
 }

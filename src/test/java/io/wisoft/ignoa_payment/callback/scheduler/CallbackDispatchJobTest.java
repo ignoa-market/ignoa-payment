@@ -74,16 +74,6 @@ class CallbackDispatchJobTest extends IntegrationTestSupport {
     }
 
     @Test
-    void 영구_실패는_바로_DEAD다() {
-        PaymentCallback callback = enqueue();
-        given(apiCallbackClient.send(anyLong(), anyString())).willReturn(CallbackOutcome.permanent("HTTP 404"));
-
-        job.execute(T0);
-
-        assertThat(reload(callback).getStatus()).isEqualTo(CallbackStatus.DEAD);
-    }
-
-    @Test
     void 최초_적재_후_24시간이_지나면_DEAD다() {
         PaymentCallback callback = enqueue();
         given(apiCallbackClient.send(anyLong(), anyString())).willReturn(CallbackOutcome.retryable("HTTP 503"));
@@ -103,6 +93,19 @@ class CallbackDispatchJobTest extends IntegrationTestSupport {
 
         verify(apiCallbackClient, times(1)).send(anyLong(), anyString());
         assertThat(reload(callback).getStatus()).isEqualTo(CallbackStatus.SENT);
+    }
+
+    @Test
+    void 한_건에서_예외가_나도_나머지는_보낸다() {
+        PaymentCallback broken = callbackRepository.save(PaymentCallback.pending(1L, 11L, "{\"n\":1}", T0));
+        PaymentCallback healthy = callbackRepository.save(PaymentCallback.pending(2L, 12L, "{\"n\":2}", T0));
+        given(apiCallbackClient.send(11L, "{\"n\":1}")).willThrow(new IllegalStateException("예상 못 한 오류"));
+        given(apiCallbackClient.send(12L, "{\"n\":2}")).willReturn(CallbackOutcome.success());
+
+        job.execute(T0);
+
+        assertThat(reload(broken).getStatus()).isEqualTo(CallbackStatus.PENDING);
+        assertThat(reload(healthy).getStatus()).isEqualTo(CallbackStatus.SENT);
     }
 
     @Test

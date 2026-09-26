@@ -96,6 +96,21 @@ class ConfirmReconcileJobTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 한_건에서_예외가_나도_나머지는_처리한다() {
+        Payment broken = confirming();
+        Payment healthy = paymentService.prepare(2L, 1000L, "상품");
+        paymentService.startConfirm(healthy.getId(), "pk2", REQUESTED_AT);
+        given(tossClient.getByOrderId(broken.getOrderId())).willThrow(new IllegalStateException("예상 못 한 오류"));
+        given(tossClient.getByOrderId(healthy.getOrderId())).willReturn(new TossLookupResult.Found(
+                new TossPayment("pk2", healthy.getOrderId(), "DONE", 1000L, null)));
+
+        job.execute(REQUESTED_AT.plusMinutes(2));
+
+        assertThat(statusOf(broken)).isEqualTo(PaymentStatus.CONFIRMING);
+        assertThat(statusOf(healthy)).isEqualTo(PaymentStatus.DONE);
+    }
+
+    @Test
     void 조회가_실패하면_30분이_지나도_상태를_바꾸지_않는다() {
         Payment payment = confirming();
         given(tossClient.getByOrderId(payment.getOrderId())).willReturn(new TossLookupResult.Failed("HTTP 503"));
@@ -106,11 +121,32 @@ class ConfirmReconcileJobTest extends IntegrationTestSupport {
     }
 
     @Test
-    void CONFIRMING이_아닌_결제는_대상이_아니다() {
+    void READY_결제는_Toss를_조회하지_않는다() {
         Payment payment = paymentService.prepare(1L, 1000L, "상품"); // READY
 
-        job.execute(REQUESTED_AT.plusHours(1));
+        job.execute(LocalDateTime.now().plusHours(1));
 
         verify(tossClient, never()).getByOrderId(payment.getOrderId());
+    }
+
+    @Test
+    void 준비_후_30분이_지난_READY는_EXPIRED로_실패시킨다() {
+        // READY는 Toss 승인을 요청한 적이 없어 돈이 나가지 않았다. 승인 요청이 5xx로 끝나 결론이 안 난 경우를 정리한다.
+        Payment payment = paymentService.prepare(1L, 1000L, "상품");
+
+        job.execute(LocalDateTime.now().plusMinutes(31));
+
+        Payment found = paymentReader.getById(payment.getId());
+        assertThat(found.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(found.getFailureCode()).isEqualTo(FailureCode.EXPIRED);
+    }
+
+    @Test
+    void 준비_후_30분이_안_지난_READY는_그대로_둔다() {
+        Payment payment = paymentService.prepare(1L, 1000L, "상품");
+
+        job.execute(LocalDateTime.now().plusMinutes(10));
+
+        assertThat(statusOf(payment)).isEqualTo(PaymentStatus.READY);
     }
 }

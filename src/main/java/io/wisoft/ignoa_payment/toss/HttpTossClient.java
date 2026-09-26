@@ -35,10 +35,14 @@ public class HttpTossClient implements TossClient {
                         if (status.is2xxSuccessful()) {
                             return new TossConfirmResult.Responded(response.bodyTo(TossPayment.class));
                         }
-                        if (status.is5xxServerError()) {
+                        // 5xx·408, 그리고 Toss 형식이 아닌 에러(프록시·WAF 응답 등)는 처리 여부를 알 수 없다.
+                        if (status.is5xxServerError() || status.value() == 408) {
                             return new TossConfirmResult.Unknown("HTTP " + status.value());
                         }
                         TossError error = readError(response, status);
+                        if (TossError.UNREADABLE_CODE.equals(error.code())) {
+                            return new TossConfirmResult.Unknown("HTTP " + status.value() + " " + error.code());
+                        }
                         return switch (error.code()) {
                             case ALREADY_PROCESSED_PAYMENT -> new TossConfirmResult.AlreadyProcessed();
                             case NOT_FOUND_PAYMENT_SESSION -> new TossConfirmResult.SessionExpired();

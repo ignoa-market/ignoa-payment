@@ -22,6 +22,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     List<Payment> findByStatusAndConfirmRequestedAtBefore(
             PaymentStatus status, LocalDateTime threshold, Pageable pageable);
 
+    List<Payment> findByStatusAndCreatedAtBefore(
+            PaymentStatus status, LocalDateTime threshold, Pageable pageable);
+
     // 승인 시작 조건부 UPDATE: READY일 때만 CONFIRMING
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""

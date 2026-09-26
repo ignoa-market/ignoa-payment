@@ -37,11 +37,16 @@ public class CallbackDispatchJob {
 
         int sent = 0;
         for (PaymentCallback callback : due) {
-            CallbackOutcome outcome = apiCallbackClient.send(callback.getTradeId(), callback.getPayload());
-            CallbackStatus status = callbackService.record(callback.getId(), outcome, now);
-            paymentMetrics.recordCallback(status);
-            if (status == CallbackStatus.SENT) {
-                sent++;
+            // 한 건의 예외가 이후 건을 막지 않게 건별로 격리한다. 실패한 건은 PENDING으로 남아 다음 주기에 다시 보낸다.
+            try {
+                CallbackOutcome outcome = apiCallbackClient.send(callback.getTradeId(), callback.getPayload());
+                CallbackStatus status = callbackService.record(callback.getId(), outcome, now);
+                paymentMetrics.recordCallback(status);
+                if (status == CallbackStatus.SENT) {
+                    sent++;
+                }
+            } catch (RuntimeException e) {
+                log.error("결제 결과 콜백 발송 중 예외: callbackId={}, tradeId={}", callback.getId(), callback.getTradeId(), e);
             }
         }
         log.info("결제 결과 콜백 발송 완료: target={}, sent={}, notSent={}", due.size(), sent, due.size() - sent);

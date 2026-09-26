@@ -109,13 +109,23 @@ class HttpTossClientTest {
     }
 
     @Test
-    void 에러_본문이_JSON이_아니어도_Rejected로_처리한다() {
+    void 에러_본문을_읽을_수_없는_4xx는_Toss_응답이_아닐_수_있어_Unknown이다() {
+        // 중간 프록시·WAF의 HTML 응답이면 Toss가 실제로 처리했는지 알 수 없다. 재조회가 결론 내게 한다.
         server.expect(requestTo(BASE_URL + "/v1/payments/confirm"))
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST).body("<html>bad</html>"));
 
         TossConfirmResult result = client.confirm("pk", "IGN-1", 1000L);
 
-        assertThat(result).isInstanceOf(TossConfirmResult.Rejected.class);
+        assertThat(result).isInstanceOf(TossConfirmResult.Unknown.class);
+    }
+
+    @Test
+    void 요청시간초과_408은_처리_여부를_몰라_Unknown이다() {
+        server.expect(requestTo(BASE_URL + "/v1/payments/confirm"))
+                .andRespond(withStatus(HttpStatus.REQUEST_TIMEOUT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"REQUEST_TIMEOUT\",\"message\":\"timeout\"}"));
+
+        assertThat(client.confirm("pk", "IGN-1", 1000L)).isInstanceOf(TossConfirmResult.Unknown.class);
     }
 
     @Test

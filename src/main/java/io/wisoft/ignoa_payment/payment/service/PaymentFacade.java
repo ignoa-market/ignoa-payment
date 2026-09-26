@@ -14,6 +14,7 @@ import io.wisoft.ignoa_payment.toss.TossConfirmResult;
 import io.wisoft.ignoa_payment.toss.TossLookupResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -55,7 +56,7 @@ public class PaymentFacade {
             return reload(payment);
         }
 
-        if (!paymentService.startConfirm(payment.getId(), request.paymentKey(), now)) {
+        if (!startConfirm(payment, request.paymentKey(), now)) {
             // 다른 요청이 먼저 승인을 시작했다.
             return reload(payment);
         }
@@ -63,6 +64,17 @@ public class PaymentFacade {
         TossConfirmResult result = tossClient.confirm(request.paymentKey(), payment.getOrderId(), payment.getAmount());
         applyConfirmResult(payment, result, now);
         return reload(payment);
+    }
+
+    // payment_key는 결제 건마다 유일하다. 다른 주문에 이미 쓰인 키면 500이 아니라 409로 알려
+    // api가 CONFIRMING을 되돌리게 한다(5xx는 UNKNOWN으로 취급되어 결론이 나지 않는다).
+    private boolean startConfirm(Payment payment, String paymentKey, LocalDateTime now) {
+        try {
+            return paymentService.startConfirm(payment.getId(), paymentKey, now);
+        } catch (DataIntegrityViolationException e) {
+            log.debug("다른 주문에 쓰인 결제 키로 승인 요청: orderId={}", payment.getOrderId());
+            throw new BusinessException(ErrorCode.PAYMENT_KEY_MISMATCH);
+        }
     }
 
     private void validateOwnership(Payment payment, PaymentConfirmRequest request) {

@@ -38,7 +38,7 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith(INTERNAL_PATH_PREFIX);
+        return !RequestPaths.normalized(request).startsWith(INTERNAL_PATH_PREFIX);
     }
 
     @Override

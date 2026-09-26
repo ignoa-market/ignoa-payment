@@ -27,15 +27,11 @@ public class HttpApiCallbackClient implements ApiCallbackClient {
         }
     }
 
-    // 408·429를 뺀 4xx는 다시 보내도 결과가 같으므로 재시도하지 않는다(계약 5).
+    // 계약 5: 2xx가 아니면 모두 재시도한다. 401(키 교체 중)·404(배포 전)처럼 4xx도 일시적일 수 있다.
     private static CallbackOutcome classify(HttpStatusCode status) {
         if (status.is2xxSuccessful()) {
             return CallbackOutcome.success();
         }
-        int value = status.value();
-        if (status.is4xxClientError() && value != 408 && value != 429) {
-            return CallbackOutcome.permanent("HTTP " + value);
-        }
-        return CallbackOutcome.retryable("HTTP " + value);
+        return CallbackOutcome.retryable("HTTP " + status.value());
     }
 }

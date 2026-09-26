@@ -23,7 +23,8 @@ public class TossResultApplier {
     private final TossClient tossClient;
 
     public void apply(Long paymentId, TossPayment tossPayment, LocalDateTime now) {
-        String tossStatus = tossPayment.status();
+        // 상태가 비어 있으면 결론을 낼 수 없으므로 진행 중으로 보고 넘긴다.
+        String tossStatus = tossPayment.status() == null ? "UNKNOWN" : tossPayment.status();
         switch (tossStatus) {
             case "DONE" -> applyDone(paymentId, tossPayment, now);
             case "ABORTED" -> paymentService.markFailed(
@@ -39,8 +40,10 @@ public class TossResultApplier {
 
     private void applyDone(Long paymentId, TossPayment tossPayment, LocalDateTime now) {
         try {
-            paymentService.markDone(paymentId, tossPayment.paymentKey(),
-                    tossPayment.approvedAtInSeoul(), tossPayment.status(), now);
+            if (!paymentService.markDone(paymentId, tossPayment.paymentKey(),
+                    tossPayment.approvedAtInSeoul(), tossPayment.status(), now)) {
+                cancelIfRecordedFailed(paymentId, tossPayment);
+            }
         } catch (DataIntegrityViolationException e) {
             // 같은 trade에 이미 성공 결제가 있다. api의 CONFIRMING 가드가 있어 사실상 일어나지 않는 최후 방어선.
             boolean canceled = tossClient.cancel(tossPayment.paymentKey(), "동일 주문 중복 결제 자동 취소");
@@ -54,6 +57,22 @@ public class TossResultApplier {
                     canceled ? "같은 주문에 이미 성공한 결제가 있어 자동 취소했습니다."
                             : "같은 주문에 이미 성공한 결제가 있습니다. 수동 취소가 필요합니다.",
                     canceled ? "CANCELED" : tossPayment.status(), now);
+        }
+    }
+
+    // 이미 FAILED로 api에 알린 결제가 Toss에서는 DONE이다. api는 거래를 되돌렸으므로 돈만 나간 상태로 두지 않는다.
+    private void cancelIfRecordedFailed(Long paymentId, TossPayment tossPayment) {
+        Payment payment = paymentReader.getById(paymentId);
+        if (payment.getStatus() != PaymentStatus.FAILED) {
+            return;
+        }
+        boolean canceled = tossClient.cancel(tossPayment.paymentKey(), "실패 처리된 결제의 승인 확인으로 자동 취소");
+        if (canceled) {
+            log.error("실패 처리된 결제가 승인되어 자동 취소 완료: paymentId={}, tradeId={}, paymentKey={}",
+                    paymentId, payment.getTradeId(), tossPayment.paymentKey());
+        } else {
+            log.error("실패 처리된 결제가 승인됨, 자동 취소 실패: paymentId={}, tradeId={}, paymentKey={}, action=Toss 관리자에서 수동 취소",
+                    paymentId, payment.getTradeId(), tossPayment.paymentKey());
         }
     }
 

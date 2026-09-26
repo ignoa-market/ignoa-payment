@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 class TossResultApplierTest extends IntegrationTestSupport {
@@ -49,6 +50,29 @@ class TossResultApplierTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 실패로_기록한_결제가_Toss에서_DONE이면_api와_어긋나지_않게_Toss에서_취소한다() {
+        // api는 FAILED 콜백을 받아 거래를 되돌렸다. 돈만 나간 상태로 두지 않는다.
+        Payment payment = paymentService.prepare(1L, 1000L, "상품");
+        paymentService.markFailed(payment.getId(), FailureCode.EXPIRED, "만료", null, NOW);
+        given(tossClient.cancel(eq("pk"), anyString())).willReturn(true);
+
+        applier.apply(payment.getId(), toss("pk", payment.getOrderId(), "DONE"), NOW);
+
+        verify(tossClient).cancel(eq("pk"), anyString());
+        assertThat(paymentReader.getById(payment.getId()).getStatus()).isEqualTo(PaymentStatus.FAILED);
+    }
+
+    @Test
+    void 이미_DONE인_결제에_DONE이_다시_오면_취소하지_않는다() {
+        Payment payment = paymentService.prepare(1L, 1000L, "상품");
+        paymentService.markDone(payment.getId(), "pk", NOW, "DONE", NOW);
+
+        applier.apply(payment.getId(), toss("pk", payment.getOrderId(), "DONE"), NOW);
+
+        verify(tossClient, never()).cancel(anyString(), anyString());
+    }
+
+    @Test
     void 가상계좌_입금대기는_취소하고_실패시킨다() {
         Payment payment = paymentService.prepare(1L, 1000L, "상품");
         given(tossClient.cancel(eq("pk"), anyString())).willReturn(true);
@@ -79,6 +103,16 @@ class TossResultApplierTest extends IntegrationTestSupport {
         applier.apply(payment.getId(), toss("pk", payment.getOrderId(), "CANCELED"), NOW);
 
         assertThat(paymentReader.getById(payment.getId()).getStatus()).isEqualTo(PaymentStatus.CANCELED);
+    }
+
+    @Test
+    void Toss_상태가_null이면_진행_중으로_보고_예외없이_넘긴다() {
+        Payment payment = paymentService.prepare(1L, 1000L, "상품");
+        paymentService.startConfirm(payment.getId(), "pk", NOW);
+
+        applier.apply(payment.getId(), toss("pk", payment.getOrderId(), null), NOW);
+
+        assertThat(paymentReader.getById(payment.getId()).getStatus()).isEqualTo(PaymentStatus.CONFIRMING);
     }
 
     @Test
