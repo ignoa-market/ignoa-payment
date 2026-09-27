@@ -25,9 +25,9 @@ services:
       SPRING_PROFILES_ACTIVE: prod
       TZ: Asia/Seoul
     ports:
-      - "38081:38081"
+      - "48080:48080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:38081/actuator/health | grep -q UP"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:48080/actuator/health | grep -q UP"]
       interval: 10s
       timeout: 3s
       retries: 12

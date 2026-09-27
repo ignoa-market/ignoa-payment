@@ -10,7 +10,7 @@ Ignoa 경매 마켓의 결제 서버. ignoa-api의 주문을 Toss Payments로 �
 ```bash
 cp .env.example .env          # 값 확인 (Toss 키는 공식 샘플 테스트 키)
 docker compose up -d mysql    # MySQL 33307, shedlock 테이블 자동 생성
-./gradlew bootRun             # 포트 38081, 프로파일 local
+./gradlew bootRun             # 포트 48080, 프로파일 local
 ```
 
 ## 테스트

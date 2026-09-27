@@ -120,6 +120,15 @@ class HttpTossClientTest {
     }
 
     @Test
+    void 멱등키_요청_처리중_409는_진행_중이라_Unknown이다() {
+        server.expect(requestTo(BASE_URL + "/v1/payments/confirm"))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"IDEMPOTENT_REQUEST_PROCESSING\",\"message\":\"처리 중\"}"));
+
+        assertThat(client.confirm("pk", "IGN-1", 1000L)).isInstanceOf(TossConfirmResult.Unknown.class);
+    }
+
+    @Test
     void 요청시간초과_408은_처리_여부를_몰라_Unknown이다() {
         server.expect(requestTo(BASE_URL + "/v1/payments/confirm"))
                 .andRespond(withStatus(HttpStatus.REQUEST_TIMEOUT).contentType(MediaType.APPLICATION_JSON)

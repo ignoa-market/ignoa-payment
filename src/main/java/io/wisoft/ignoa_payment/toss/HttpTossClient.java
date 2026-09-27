@@ -13,6 +13,7 @@ public class HttpTossClient implements TossClient {
     private static final String ALREADY_PROCESSED_PAYMENT = "ALREADY_PROCESSED_PAYMENT";
     private static final String NOT_FOUND_PAYMENT_SESSION = "NOT_FOUND_PAYMENT_SESSION";
     private static final String NOT_FOUND_PAYMENT = "NOT_FOUND_PAYMENT";
+    private static final String IDEMPOTENT_REQUEST_PROCESSING = "IDEMPOTENT_REQUEST_PROCESSING";
 
     private final RestClient confirmClient; // 승인·취소(읽기 20초)
     private final RestClient lookupClient;  // 조회(읽기 5초)
@@ -40,7 +41,9 @@ public class HttpTossClient implements TossClient {
                             return new TossConfirmResult.Unknown("HTTP " + status.value());
                         }
                         TossError error = readError(response, status);
-                        if (TossError.UNREADABLE_CODE.equals(error.code())) {
+                        // 같은 멱등키의 첫 요청이 아직 처리 중이다(Toss 문서: 다시 요청해 응답을 확인). 재조회가 결론 낸다.
+                        if (TossError.UNREADABLE_CODE.equals(error.code())
+                                || IDEMPOTENT_REQUEST_PROCESSING.equals(error.code())) {
                             return new TossConfirmResult.Unknown("HTTP " + status.value() + " " + error.code());
                         }
                         return switch (error.code()) {
