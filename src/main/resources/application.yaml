@@ -5,6 +5,8 @@ logging:
   level:
     root: INFO
     io.wisoft.ignoa_payment: ${APP_LOG_LEVEL:INFO}
+  pattern:
+    correlation: "[%X{trace_id:-},%X{span_id:-}] "
 
 spring:
   application:
