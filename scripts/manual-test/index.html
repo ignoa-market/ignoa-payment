@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ignoa-payment 수동 테스트</title>
+  <!-- Toss Payments SDK v2 (공식 샘플과 같은 방식) -->
+  <script src="https://js.tosspayments.com/v2/standard"></script>
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 720px; margin: 32px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 20px; }
+    h2 { font-size: 16px; margin-top: 28px; }
+    label { display: block; margin: 10px 0 4px; font-size: 13px; color: #555; }
+    input { width: 100%; padding: 8px; box-sizing: border-box; font-family: monospace; }
+    button { margin-top: 16px; padding: 10px 16px; font-size: 15px; cursor: pointer; }
+    pre { background: #f5f5f5; padding: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+    .ok { color: #0a7d3b; } .ng { color: #c62828; }
+    .hint { font-size: 12px; color: #777; }
+  </style>
+</head>
+<body>
+<h1>ignoa-payment 수동 테스트</h1>
+<p class="hint">결제 서버 준비 API → Toss 결제창 → 승인 API 흐름을 확인하는 로컬 전용 페이지. 테스트 키만 사용한다.</p>
+
+<!-- 1. 결제창 열기 -->
+<section id="checkout">
+  <h2>1. 준비 API 응답 값 입력</h2>
+  <label>Toss 클라이언트 키 (test_gck_… · 이 브라우저에만 저장)</label>
+  <input id="clientKey" placeholder="test_gck_..." />
+  <label>order_id (준비 API 응답)</label>
+  <input id="orderId" placeholder="IGN-..." />
+  <label>amount</label>
+  <input id="amount" type="number" value="1000" />
+  <label>order_name</label>
+  <input id="orderName" value="테스트" />
+  <label>trade_id (승인 요청에 필요)</label>
+  <input id="tradeId" type="number" value="1" />
+  <button id="load">결제창 불러오기</button>
+
+  <div id="widget" style="display:none">
+    <h2>2. 결제 수단 선택</h2>
+    <div id="payment-method"></div>
+    <div id="agreement"></div>
+    <button id="pay">결제하기</button>
+  </div>
+</section>
+
+<!-- 3. 결과 -->
+<section id="result" style="display:none">
+  <h2 id="resultTitle"></h2>
+  <pre id="resultBody"></pre>
+  <div id="confirmBlock" style="display:none">
+    <h2>3. 승인 API 호출 (10분 안에)</h2>
+    <p class="hint">ignoa-payment 폴더에서 실행한다. 응답 status가 DONE이면 성공.</p>
+    <pre id="confirmCurl"></pre>
+  </div>
+  <button onclick="location.href = location.pathname">처음으로</button>
+</section>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const STORAGE_KEY = "ignoa-payment-manual-test";
+
+  function saved() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+  }
+
+  function save(values) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(values)); } catch { /* 저장 실패는 무시 */ }
+  }
+
+  function showResult(title, ok, body) {
+    $("checkout").style.display = "none";
+    $("result").style.display = "block";
+    $("resultTitle").textContent = title;
+    $("resultTitle").className = ok ? "ok" : "ng";
+    $("resultBody").textContent = body;
+  }
+
+  // Toss가 successUrl/failUrl로 돌려보낸 경우
+  const params = new URLSearchParams(location.search);
+  if (params.get("result") === "success") {
+    const paymentKey = params.get("paymentKey");
+    const orderId = params.get("orderId");
+    const amount = Number(params.get("amount"));
+    const tradeId = Number(params.get("tradeId"));
+    showResult("결제 인증 성공 (아직 승인 전 — 돈은 나가지 않음)", true,
+      JSON.stringify({ tradeId, orderId, paymentKey, amount, paymentType: params.get("paymentType") }, null, 2));
+    $("confirmBlock").style.display = "block";
+    const body = JSON.stringify({ trade_id: tradeId, order_id: orderId, payment_key: paymentKey, amount });
+    $("confirmCurl").textContent =
+`KEY=$(grep '^INTERNAL_API_KEY=' .env | cut -d= -f2)
+curl -s -X POST localhost:48080/internal/payments/confirm \\
+  -H "X-Internal-Api-Key: $KEY" -H "Content-Type: application/json" \\
+  -d '${body}'`;
+  } else if (params.get("result") === "fail") {
+    showResult("결제 인증 실패", false,
+      JSON.stringify({ code: params.get("code"), message: params.get("message"), orderId: params.get("orderId") }, null, 2));
+  } else {
+    const values = saved();
+    if (values.clientKey) $("clientKey").value = values.clientKey;
+  }
+
+  let widgets;
+
+  $("load").addEventListener("click", async () => {
+    const clientKey = $("clientKey").value.trim();
+    const amount = Number($("amount").value);
+    if (!clientKey.startsWith("test_gck_")) {
+      alert("결제위젯 테스트 클라이언트 키(test_gck_…)를 입력하세요.");
+      return;
+    }
+    if (!$("orderId").value.trim()) {
+      alert("준비 API로 받은 order_id를 입력하세요.");
+      return;
+    }
+    save({ clientKey });
+
+    const tossPayments = TossPayments(clientKey);
+    widgets = tossPayments.widgets({ customerKey: TossPayments.ANONYMOUS });
+    // setAmount는 렌더링보다 먼저 호출해야 한다(Toss 공식 샘플).
+    await widgets.setAmount({ currency: "KRW", value: amount });
+    await Promise.all([
+      widgets.renderPaymentMethods({ selector: "#payment-method", variantKey: "DEFAULT" }),
+      widgets.renderAgreement({ selector: "#agreement", variantKey: "AGREEMENT" }),
+    ]);
+    $("widget").style.display = "block";
+  });
+
+  $("pay").addEventListener("click", async () => {
+    const base = location.origin + location.pathname;
+    const tradeId = $("tradeId").value;
+    // successUrl에 tradeId를 붙인다(연동 가이드 7장). Toss가 paymentKey·orderId·amount를 뒤에 덧붙인다.
+    await widgets.requestPayment({
+      orderId: $("orderId").value.trim(),
+      orderName: $("orderName").value,
+      successUrl: `${base}?result=success&tradeId=${tradeId}`,
+      failUrl: `${base}?result=fail`,
+    });
+  });
+</script>
+</body>
+</html>
