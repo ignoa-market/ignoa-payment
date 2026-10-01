@@ -1,0 +1,16 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create
+    show-sql: false
+    open-in-view: false
+
+ignoa:
+  internal-api-key: test-internal-key
+  api-base-url: http://localhost:38080
+  scheduling:
+    enabled: false
+
+toss:
+  base-url: http://localhost:65535
+  secret-key: test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6

@@ -1,0 +1,36 @@
+server:
+  port: 48080
+
+logging:
+  level:
+    root: INFO
+    io.wisoft.ignoa_payment: ${APP_LOG_LEVEL:INFO}
+
+spring:
+  application:
+    name: Ignoa Payment
+
+  profiles:
+    default: local
+
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
+ignoa:
+  internal-api-key: ${INTERNAL_API_KEY}
+  api-base-url: ${API_BASE_URL}
+  cloudfront-origin:
+    enabled: false
+    secret: ${CLOUDFRONT_ORIGIN_VERIFY_SECRET:}
+  scheduling:
+    enabled: true
+
+toss:
+  base-url: ${TOSS_BASE_URL:https://api.tosspayments.com}
+  secret-key: ${TOSS_SECRET_KEY}

@@ -1,0 +1,126 @@
+name: CD
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v7
+
+      - name: Java 21 설치
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Gradle 캐시 복원
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: jar 빌드
+        run: ./gradlew bootJar
+
+      - name: GHCR 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 이미지 빌드 및 GHCR 푸시
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/ignoa-market/ignoa-payment:${{ github.sha }}
+            ghcr.io/ignoa-market/ignoa-payment:prod
+
+      - name: AWS 인증
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: 배포 명령 전송
+        id: send
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          jq -n --arg tag "$IMAGE_TAG" '{
+            commands: [
+              "set -eu",
+              "cd /home/ubuntu/ignoa/ignoa-payment",
+              "export IMAGE_TAG=\($tag)",
+              "umask 077",
+              "aws ssm get-parameters-by-path --path /ignoa/prod/payment/ --with-decryption --region ap-northeast-2 --query '"'"'Parameters[].[Name,Value]'"'"' --output text | awk -F'"'"'\\t'"'"' '"'"'{ sub(/.*\\//,\"\",$1); print $1\"=\"$2 }'"'"' > .env.tmp",
+              "[ \"$(wc -l < .env.tmp)\" -eq 10 ] || { echo '"'"'Parameter Store 조회 실패'"'"'; rm -f .env.tmp; exit 1; }",
+              "mv .env.tmp .env",
+              "docker compose pull",
+              "docker compose up -d",
+              "for i in $(seq 1 36); do curl -fsS localhost:48080/actuator/health 2>/dev/null | grep -q UP && echo HEALTHY && exit 0; sleep 5; done",
+              "echo UNHEALTHY; docker compose ps; docker compose logs --tail=80 app; exit 1"
+            ]
+          }' > params.json
+
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy $IMAGE_TAG" \
+            --timeout-seconds 600 \
+            --parameters file://params.json \
+            --query 'Command.CommandId' --output text)
+          echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
+          echo "SSM CommandId: $CMD_ID"
+
+      - name: 배포 결과 확인
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          CMD_ID: ${{ steps.send.outputs.command_id }}
+        run: |
+          for i in $(seq 1 60); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+              --query 'Status' --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            echo "배포 진행 중... ($i/60, 현재: $STATUS)"
+            sleep 5
+          done
+
+          echo "--- stdout ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" \
+            --instance-id "$INSTANCE_ID" --query 'StandardOutputContent' --output text
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "--- stderr ---"
+            aws ssm get-command-invocation --command-id "$CMD_ID" \
+              --instance-id "$INSTANCE_ID" --query 'StandardErrorContent' --output text
+            echo "::error::배포 실패 ($STATUS)"
+            exit 1
+          fi
+          echo "배포 성공: ${{ github.sha }}"
