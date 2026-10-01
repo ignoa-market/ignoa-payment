@@ -46,6 +46,10 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'io.micrometer:micrometer-registry-prometheus'
 
+	// 에러 추적
+	implementation 'io.sentry:sentry-spring-boot-starter-jakarta:8.58.0'
+	implementation 'io.sentry:sentry-logback:8.58.0'
+
 	// 개발 편의
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
