@@ -27,7 +27,7 @@ public abstract class IntegrationTestSupport {
     protected static final String INTERNAL_KEY = "test-internal-key";
 
     @ServiceConnection
-    static final MySQLContainer<?> MYSQL_CONTAINER = new MySQLContainer<>("mysql:8.0");
+    static final MySQLContainer<?> MYSQL_CONTAINER = new MySQLContainer<>("mysql:8.4");
 
     static {
         MYSQL_CONTAINER.start();
