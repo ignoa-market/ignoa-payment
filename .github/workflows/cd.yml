@@ -77,7 +77,7 @@ jobs:
               "export IMAGE_TAG=\($tag)",
               "umask 077",
               "aws ssm get-parameters-by-path --path /ignoa/prod/payment/ --with-decryption --region ap-northeast-2 --query '"'"'Parameters[].[Name,Value]'"'"' --output text | awk -F'"'"'\\t'"'"' '"'"'{ sub(/.*\\//,\"\",$1); print $1\"=\"$2 }'"'"' > .env.tmp",
-              "[ \"$(wc -l < .env.tmp)\" -eq 10 ] || { echo '"'"'Parameter Store 조회 실패'"'"'; rm -f .env.tmp; exit 1; }",
+              "[ \"$(wc -l < .env.tmp)\" -eq 11 ] || { echo '"'"'Parameter Store 조회 실패'"'"'; rm -f .env.tmp; exit 1; }",
               "mv .env.tmp .env",
               "docker compose pull",
               "docker compose up -d",
