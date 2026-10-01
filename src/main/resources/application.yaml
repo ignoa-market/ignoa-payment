@@ -27,7 +27,7 @@ ignoa:
   api-base-url: ${API_BASE_URL}
   cloudfront-origin:
     enabled: false
-    secret: ${CLOUDFRONT_ORIGIN_VERIFY:}
+    secret: ${CLOUDFRONT_ORIGIN_VERIFY_SECRET:}
   scheduling:
     enabled: true
 
