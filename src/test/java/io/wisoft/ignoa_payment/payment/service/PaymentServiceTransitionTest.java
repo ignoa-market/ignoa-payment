@@ -8,6 +8,8 @@ import io.wisoft.ignoa_payment.payment.entity.FailureCode;
 import io.wisoft.ignoa_payment.payment.entity.Payment;
 import io.wisoft.ignoa_payment.payment.entity.PaymentStatus;
 import io.wisoft.ignoa_payment.support.IntegrationTestSupport;
+import io.wisoft.ignoa_payment.support.LogCapture;
+import ch.qos.logback.classic.Level;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -68,6 +70,20 @@ class PaymentServiceTransitionTest extends IntegrationTestSupport {
         assertThat(payload.get("trade_id").asLong()).isEqualTo(1L);
         assertThat(payload.get("order_id").asText()).isEqualTo(payment.getOrderId());
         assertThat(payload.get("status").asText()).isEqualTo("DONE");
+    }
+
+    @Test
+    void 정상_결제_승인은_INFO_로그를_남기지_않는다() {
+        Payment payment = paymentService.prepare(1L, 1000L, "상품");
+        paymentService.startConfirm(payment.getId(), "pk-1", NOW);
+
+        try (LogCapture logs = LogCapture.at(PaymentService.class, Level.DEBUG)) {
+            paymentService.markDone(payment.getId(), "pk-1", APPROVED_AT, "DONE", NOW);
+
+            assertThat(logs.events()).noneMatch(event ->
+                    event.getLevel().isGreaterOrEqual(Level.INFO)
+                            && event.getFormattedMessage().contains("결제 승인 완료"));
+        }
     }
 
     @Test

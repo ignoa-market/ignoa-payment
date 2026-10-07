@@ -6,6 +6,8 @@ import io.wisoft.ignoa_payment.payment.entity.PaymentStatus;
 import io.wisoft.ignoa_payment.payment.service.PaymentReader;
 import io.wisoft.ignoa_payment.payment.service.PaymentService;
 import io.wisoft.ignoa_payment.support.IntegrationTestSupport;
+import io.wisoft.ignoa_payment.support.LogCapture;
+import ch.qos.logback.classic.Level;
 import io.wisoft.ignoa_payment.toss.TossLookupResult;
 import io.wisoft.ignoa_payment.toss.TossPayment;
 import org.junit.jupiter.api.Test;
@@ -100,11 +102,16 @@ class ConfirmReconcileJobTest extends IntegrationTestSupport {
         Payment broken = confirming();
         Payment healthy = paymentService.prepare(2L, 1000L, "상품");
         paymentService.startConfirm(healthy.getId(), "pk2", REQUESTED_AT);
-        given(tossClient.getByOrderId(broken.getOrderId())).willThrow(new IllegalStateException("예상 못 한 오류"));
+        given(tossClient.getByOrderId(broken.getOrderId())).willThrow(new IllegalStateException("external-secret-message"));
         given(tossClient.getByOrderId(healthy.getOrderId())).willReturn(new TossLookupResult.Found(
                 new TossPayment("pk2", healthy.getOrderId(), "DONE", 1000L, null)));
 
-        job.execute(REQUESTED_AT.plusMinutes(2));
+        try (LogCapture logs = LogCapture.at(ConfirmReconcileJob.class, Level.DEBUG)) {
+            job.execute(REQUESTED_AT.plusMinutes(2));
+            assertThat(logs.events()).noneMatch(event -> event.getFormattedMessage().contains("external-secret-message")
+                    || event.getThrowableProxy() != null);
+            assertThat(logs.events()).anyMatch(event -> event.getFormattedMessage().contains("stage=LOOKUP"));
+        }
 
         assertThat(statusOf(broken)).isEqualTo(PaymentStatus.CONFIRMING);
         assertThat(statusOf(healthy)).isEqualTo(PaymentStatus.DONE);

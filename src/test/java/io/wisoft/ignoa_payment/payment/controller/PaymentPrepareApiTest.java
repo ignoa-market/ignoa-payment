@@ -4,6 +4,9 @@ import io.wisoft.ignoa_payment.payment.entity.Payment;
 import io.wisoft.ignoa_payment.payment.entity.PaymentStatus;
 import io.wisoft.ignoa_payment.payment.repository.PaymentRepository;
 import io.wisoft.ignoa_payment.support.IntegrationTestSupport;
+import io.wisoft.ignoa_payment.support.LogCapture;
+import io.wisoft.ignoa_payment.global.exception.GlobalExceptionHandler;
+import ch.qos.logback.classic.Level;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -83,6 +86,19 @@ class PaymentPrepareApiTest extends IntegrationTestSupport {
                 .andExpect(status().isBadRequest());
 
         assertThat(paymentRepository.count()).isZero();
+    }
+
+    @Test
+    void 잘못된_JSON의_원문을_로그에_남기지_않는다() throws Exception {
+        try (LogCapture logs = LogCapture.at(GlobalExceptionHandler.class, Level.DEBUG)) {
+            mockMvc.perform(post("/internal/payments")
+                            .header(INTERNAL_KEY_HEADER, INTERNAL_KEY)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"secret-marker\":"))
+                    .andExpect(status().isBadRequest());
+
+            assertThat(logs.events()).noneMatch(event -> event.getFormattedMessage().contains("reason="));
+        }
     }
 
     @Test

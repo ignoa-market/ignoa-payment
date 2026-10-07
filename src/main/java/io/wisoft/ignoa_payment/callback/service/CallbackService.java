@@ -34,7 +34,7 @@ public class CallbackService {
                             callbackId, callback.getTradeId(), callback.getAttempts());
                 } else {
                     callback.scheduleRetry(now.plus(delayAfter(callback.getAttempts() + 1)), outcome.error());
-                    log.warn("결제 결과 콜백 재시도 예약: callbackId={}, tradeId={}, attempts={}, nextAttemptAt={}",
+                    log.debug("결제 결과 콜백 재시도 예약: callbackId={}, tradeId={}, attempts={}, nextAttemptAt={}",
                             callbackId, callback.getTradeId(), callback.getAttempts(), callback.getNextAttemptAt());
                 }
             }
