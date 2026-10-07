@@ -84,7 +84,7 @@ public class WebhookService {
                     root.path("eventType").asText(null),
                     root.path("data").path("orderId").asText(null));
         } catch (JsonProcessingException e) {
-            log.debug("웹훅 본문 파싱 실패: reason={}", e.getOriginalMessage());
+            log.debug("웹훅 본문 파싱 실패: result=IGNORED");
             return ParsedWebhook.INVALID;
         }
     }

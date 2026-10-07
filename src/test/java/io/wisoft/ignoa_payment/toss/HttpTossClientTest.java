@@ -1,5 +1,7 @@
 package io.wisoft.ignoa_payment.toss;
 
+import ch.qos.logback.classic.Level;
+import io.wisoft.ignoa_payment.support.LogCapture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -149,11 +151,25 @@ class HttpTossClientTest {
     @Test
     void 타임아웃은_Unknown이다() {
         ResponseCreator timeout = request -> {
-            throw new SocketTimeoutException("Read timed out");
+            throw new SocketTimeoutException("external-secret-message");
         };
         server.expect(requestTo(BASE_URL + "/v1/payments/confirm")).andRespond(timeout);
 
-        assertThat(client.confirm("pk", "IGN-1", 1000L)).isInstanceOf(TossConfirmResult.Unknown.class);
+        try (LogCapture logs = LogCapture.at(HttpTossClient.class, Level.DEBUG)) {
+            assertThat(client.confirm("pk", "IGN-1", 1000L)).isInstanceOf(TossConfirmResult.Unknown.class);
+            assertThat(logs.events()).noneMatch(event -> event.getFormattedMessage().contains("external-secret-message"));
+        }
+    }
+
+    @Test
+    void 조회_타임아웃에서도_외부_예외_메시지를_로그에_남기지_않는다() {
+        server.expect(requestTo(BASE_URL + "/v1/payments/orders/IGN-1"))
+                .andRespond(request -> { throw new SocketTimeoutException("external-secret-message"); });
+
+        try (LogCapture logs = LogCapture.at(HttpTossClient.class, Level.DEBUG)) {
+            assertThat(client.getByOrderId("IGN-1")).isInstanceOf(TossLookupResult.Failed.class);
+            assertThat(logs.events()).noneMatch(event -> event.getFormattedMessage().contains("external-secret-message"));
+        }
     }
 
     @Test
@@ -213,5 +229,21 @@ class HttpTossClientTest {
                 .andRespond(withStatus(HttpStatus.BAD_REQUEST));
 
         assertThat(client.cancel("pk", "중복 결제")).isFalse();
+    }
+
+    @Test
+    void 취소_전송_예외는_결제_키와_예외_원문을_로그에_남기지_않는다() {
+        server.expect(requestTo(BASE_URL + "/v1/payments/pk-secret/cancel"))
+                .andRespond(request -> {
+                    throw new SocketTimeoutException("external-secret-message");
+                });
+
+        try (LogCapture logs = LogCapture.at(HttpTossClient.class, Level.DEBUG)) {
+            assertThat(client.cancel("pk-secret", "중복 결제")).isFalse();
+
+            assertThat(logs.events()).noneMatch(event ->
+                    event.getFormattedMessage().contains("pk-secret")
+                            || event.getFormattedMessage().contains("external-secret-message"));
+        }
     }
 }

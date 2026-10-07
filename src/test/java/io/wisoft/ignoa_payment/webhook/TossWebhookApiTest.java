@@ -5,9 +5,12 @@ import io.wisoft.ignoa_payment.payment.entity.PaymentStatus;
 import io.wisoft.ignoa_payment.payment.service.PaymentReader;
 import io.wisoft.ignoa_payment.payment.service.PaymentService;
 import io.wisoft.ignoa_payment.support.IntegrationTestSupport;
+import io.wisoft.ignoa_payment.support.LogCapture;
+import io.wisoft.ignoa_payment.global.exception.GlobalExceptionHandler;
 import io.wisoft.ignoa_payment.toss.TossLookupResult;
 import io.wisoft.ignoa_payment.toss.TossPayment;
 import org.junit.jupiter.api.Test;
+import ch.qos.logback.classic.Level;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
@@ -90,6 +93,15 @@ class TossWebhookApiTest extends IntegrationTestSupport {
     }
 
     @Test
+    void 잘못된_웹훅_본문을_로그에_노출하지_않는다() throws Exception {
+        try (LogCapture logs = LogCapture.at(WebhookService.class, Level.DEBUG)) {
+            webhook("{\"secret-marker\":").andExpect(status().isOk());
+            assertThat(logs.events()).noneMatch(event -> event.getFormattedMessage().contains("secret-marker"));
+            assertThat(logs.events()).noneMatch(event -> event.getFormattedMessage().contains("reason="));
+        }
+    }
+
+    @Test
     void orderId가_없으면_200_IGNORED다() throws Exception {
         webhook("{\"eventType\":\"PAYMENT_STATUS_CHANGED\",\"data\":{}}").andExpect(status().isOk());
 
@@ -101,7 +113,10 @@ class TossWebhookApiTest extends IntegrationTestSupport {
         Payment payment = paymentService.prepare(1L, 1000L, "상품");
         given(tossClient.getByOrderId(payment.getOrderId())).willReturn(new TossLookupResult.Failed("HTTP 503"));
 
-        webhook(statusChanged(payment.getOrderId(), "DONE")).andExpect(status().isInternalServerError());
+        try (LogCapture logs = LogCapture.at(GlobalExceptionHandler.class, Level.DEBUG)) {
+            webhook(statusChanged(payment.getOrderId(), "DONE")).andExpect(status().isInternalServerError());
+            assertThat(logs.events()).noneMatch(event -> event.getLevel() == Level.ERROR);
+        }
 
         assertThat(lastResult()).isEqualTo(WebhookResult.FAILED);
     }

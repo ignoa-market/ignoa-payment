@@ -40,7 +40,7 @@ public class PaymentService {
         }
         Payment payment = paymentReader.getById(paymentId);
         callbackAppender.append(payment, now);
-        log.info("결제 승인 완료: tradeId={}, orderId={}, amount={}",
+        log.debug("결제 승인 완료: tradeId={}, orderId={}, amount={}",
                 payment.getTradeId(), payment.getOrderId(), payment.getAmount());
         return true;
     }

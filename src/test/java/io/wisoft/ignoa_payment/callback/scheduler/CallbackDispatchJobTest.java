@@ -6,6 +6,8 @@ import io.wisoft.ignoa_payment.callback.repository.PaymentCallbackRepository;
 import io.wisoft.ignoa_payment.callback.service.CallbackOutcome;
 import io.wisoft.ignoa_payment.callback.service.CallbackService;
 import io.wisoft.ignoa_payment.support.IntegrationTestSupport;
+import io.wisoft.ignoa_payment.support.LogCapture;
+import ch.qos.logback.classic.Level;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -53,7 +55,12 @@ class CallbackDispatchJobTest extends IntegrationTestSupport {
         PaymentCallback callback = enqueue();
         given(apiCallbackClient.send(anyLong(), anyString())).willReturn(CallbackOutcome.retryable("HTTP 503"));
 
-        job.execute(T0);
+        try (LogCapture logs = LogCapture.at(CallbackService.class, Level.DEBUG)) {
+            job.execute(T0);
+
+            assertThat(logs.events()).noneMatch(event -> event.getLevel().isGreaterOrEqual(Level.WARN)
+                    && event.getFormattedMessage().contains("결제 결과 콜백 재시도 예약"));
+        }
 
         PaymentCallback found = reload(callback);
         assertThat(found.getStatus()).isEqualTo(CallbackStatus.PENDING);
@@ -99,10 +106,17 @@ class CallbackDispatchJobTest extends IntegrationTestSupport {
     void 한_건에서_예외가_나도_나머지는_보낸다() {
         PaymentCallback broken = callbackRepository.save(PaymentCallback.pending(1L, 11L, "{\"n\":1}", T0));
         PaymentCallback healthy = callbackRepository.save(PaymentCallback.pending(2L, 12L, "{\"n\":2}", T0));
-        given(apiCallbackClient.send(11L, "{\"n\":1}")).willThrow(new IllegalStateException("예상 못 한 오류"));
+        given(apiCallbackClient.send(11L, "{\"n\":1}")).willThrow(new IllegalStateException("external-secret-message"));
         given(apiCallbackClient.send(12L, "{\"n\":2}")).willReturn(CallbackOutcome.success());
 
-        job.execute(T0);
+        try (LogCapture logs = LogCapture.at(CallbackDispatchJob.class, Level.DEBUG)) {
+            job.execute(T0);
+
+            assertThat(logs.events()).anyMatch(event -> event.getFormattedMessage().contains("errors=1"));
+            assertThat(logs.events()).anyMatch(event -> event.getFormattedMessage().contains("stage=SEND"));
+            assertThat(logs.events()).noneMatch(event -> event.getFormattedMessage().contains("external-secret-message")
+                    || event.getThrowableProxy() != null);
+        }
 
         assertThat(reload(broken).getStatus()).isEqualTo(CallbackStatus.PENDING);
         assertThat(reload(healthy).getStatus()).isEqualTo(CallbackStatus.SENT);

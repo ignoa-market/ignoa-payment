@@ -1,12 +1,10 @@
 package io.wisoft.ignoa_payment.toss;
 
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
-@Slf4j
 public class HttpTossClient implements TossClient {
 
     private static final String IDEMPOTENCY_KEY = "Idempotency-Key";
@@ -53,7 +51,6 @@ public class HttpTossClient implements TossClient {
                         };
                     });
         } catch (RestClientException e) {
-            log.warn("Toss 승인 응답 미확인: orderId={}, reason={}", orderId, e.getMessage());
             return new TossConfirmResult.Unknown(e.getClass().getSimpleName());
         }
     }
@@ -76,7 +73,6 @@ public class HttpTossClient implements TossClient {
                         return new TossLookupResult.Failed("HTTP " + status.value() + " " + error.code());
                     });
         } catch (RestClientException e) {
-            log.warn("Toss 결제 조회 실패: orderId={}, reason={}", orderId, e.getMessage());
             return new TossLookupResult.Failed(e.getClass().getSimpleName());
         }
     }
@@ -91,7 +87,6 @@ public class HttpTossClient implements TossClient {
                     .body(new TossCancelRequest(cancelReason))
                     .exchange((request, response) -> response.getStatusCode().is2xxSuccessful());
         } catch (RestClientException e) {
-            log.warn("Toss 결제 취소 요청 실패: paymentKey={}, reason={}", paymentKey, e.getMessage());
             return false;
         }
     }
