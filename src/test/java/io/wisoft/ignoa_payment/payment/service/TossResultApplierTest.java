@@ -4,7 +4,9 @@ import io.wisoft.ignoa_payment.payment.entity.FailureCode;
 import io.wisoft.ignoa_payment.payment.entity.Payment;
 import io.wisoft.ignoa_payment.payment.entity.PaymentStatus;
 import io.wisoft.ignoa_payment.support.IntegrationTestSupport;
+import io.wisoft.ignoa_payment.support.LogCapture;
 import io.wisoft.ignoa_payment.toss.TossPayment;
+import ch.qos.logback.classic.Level;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -41,12 +43,34 @@ class TossResultApplierTest extends IntegrationTestSupport {
         paymentService.markDone(first.getId(), "pk-1", NOW, "DONE", NOW);
         given(tossClient.cancel(eq("pk-2"), anyString())).willReturn(true);
 
-        applier.apply(second.getId(), toss("pk-2", second.getOrderId(), "DONE"), NOW);
+        try (LogCapture logs = LogCapture.at(TossResultApplier.class, Level.DEBUG)) {
+            applier.apply(second.getId(), toss("pk-2", second.getOrderId(), "DONE"), NOW);
+
+            assertThat(logs.events()).anyMatch(event -> event.getLevel() == Level.WARN
+                    && event.getFormattedMessage().contains("중복 결제 자동 취소 완료"));
+            assertThat(logs.events()).noneMatch(event -> event.getFormattedMessage().contains("pk-2"));
+        }
 
         verify(tossClient).cancel(eq("pk-2"), anyString());
         Payment found = paymentReader.getById(second.getId());
         assertThat(found.getStatus()).isEqualTo(PaymentStatus.FAILED);
         assertThat(found.getFailureCode()).isEqualTo(FailureCode.ALREADY_PAID);
+    }
+
+    @Test
+    void 중복_결제_자동_취소_실패는_ERROR로_남기되_결제_키는_남기지_않는다() {
+        Payment first = paymentService.prepare(1L, 1000L, "상품");
+        Payment second = paymentService.prepare(1L, 1000L, "상품");
+        paymentService.markDone(first.getId(), "pk-1", NOW, "DONE", NOW);
+        given(tossClient.cancel(eq("pk-secret"), anyString())).willReturn(false);
+
+        try (LogCapture logs = LogCapture.at(TossResultApplier.class, Level.DEBUG)) {
+            applier.apply(second.getId(), toss("pk-secret", second.getOrderId(), "DONE"), NOW);
+
+            assertThat(logs.events()).anyMatch(event -> event.getLevel() == Level.ERROR
+                    && event.getFormattedMessage().contains("중복 결제 자동 취소 실패"));
+            assertThat(logs.events()).noneMatch(event -> event.getFormattedMessage().contains("pk-secret"));
+        }
     }
 
     @Test
@@ -56,7 +80,12 @@ class TossResultApplierTest extends IntegrationTestSupport {
         paymentService.markFailed(payment.getId(), FailureCode.EXPIRED, "만료", null, NOW);
         given(tossClient.cancel(eq("pk"), anyString())).willReturn(true);
 
-        applier.apply(payment.getId(), toss("pk", payment.getOrderId(), "DONE"), NOW);
+        try (LogCapture logs = LogCapture.at(TossResultApplier.class, Level.DEBUG)) {
+            applier.apply(payment.getId(), toss("pk", payment.getOrderId(), "DONE"), NOW);
+            assertThat(logs.events()).anyMatch(event -> event.getLevel() == Level.WARN
+                    && event.getFormattedMessage().contains("자동 취소 완료"));
+            assertThat(logs.events()).noneMatch(event -> event.getFormattedMessage().contains("paymentKey="));
+        }
 
         verify(tossClient).cancel(eq("pk"), anyString());
         assertThat(paymentReader.getById(payment.getId()).getStatus()).isEqualTo(PaymentStatus.FAILED);
@@ -77,7 +106,10 @@ class TossResultApplierTest extends IntegrationTestSupport {
         Payment payment = paymentService.prepare(1L, 1000L, "상품");
         given(tossClient.cancel(eq("pk"), anyString())).willReturn(true);
 
-        applier.apply(payment.getId(), toss("pk", payment.getOrderId(), "WAITING_FOR_DEPOSIT"), NOW);
+        try (LogCapture logs = LogCapture.at(TossResultApplier.class, Level.DEBUG)) {
+            applier.apply(payment.getId(), toss("pk", payment.getOrderId(), "WAITING_FOR_DEPOSIT"), NOW);
+            assertThat(logs.events()).anyMatch(event -> event.getLevel() == Level.WARN);
+        }
 
         verify(tossClient).cancel(eq("pk"), anyString());
         assertThat(paymentReader.getById(payment.getId()).getFailureCode()).isEqualTo(FailureCode.TOSS_REJECTED);

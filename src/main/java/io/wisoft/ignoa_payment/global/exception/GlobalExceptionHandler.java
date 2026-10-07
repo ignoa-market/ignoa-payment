@@ -20,7 +20,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException e, HttpServletRequest request) {
         ErrorCode errorCode = e.getErrorCode();
 
-        if (errorCode.getHttpStatus().is5xxServerError()) {
+        if (errorCode == ErrorCode.WEBHOOK_PROCESSING_FAILED) {
+            log.debug("웹훅 처리 보류: code={}, method={}, uri={}, action=Toss 재전송 대기",
+                    errorCode.name(), request.getMethod(), request.getRequestURI());
+        } else if (errorCode.getHttpStatus().is5xxServerError()) {
             log.error("비즈니스 처리 실패: code={}, method={}, uri={}",
                     errorCode.name(), request.getMethod(), request.getRequestURI(), e);
         } else {
@@ -45,7 +48,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
-        log.debug("요청 본문 파싱 실패: reason={}", e.getMostSpecificCause().getMessage());
+        log.debug("요청 본문 파싱 실패: code={}", ErrorCode.INVALID_JSON_FORMAT.name());
         return toResponse(ErrorCode.INVALID_JSON_FORMAT);
     }
 

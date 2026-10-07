@@ -36,19 +36,26 @@ public class CallbackDispatchJob {
         }
 
         int sent = 0;
+        int errors = 0;
         for (PaymentCallback callback : due) {
             // 한 건의 예외가 이후 건을 막지 않게 건별로 격리한다. 실패한 건은 PENDING으로 남아 다음 주기에 다시 보낸다.
+            String stage = "SEND";
             try {
                 CallbackOutcome outcome = apiCallbackClient.send(callback.getTradeId(), callback.getPayload());
+                stage = "RECORD";
                 CallbackStatus status = callbackService.record(callback.getId(), outcome, now);
+                stage = "METRICS";
                 paymentMetrics.recordCallback(status);
                 if (status == CallbackStatus.SENT) {
                     sent++;
                 }
             } catch (RuntimeException e) {
-                log.error("결제 결과 콜백 발송 중 예외: callbackId={}, tradeId={}", callback.getId(), callback.getTradeId(), e);
+                errors++;
+                log.error("결제 결과 콜백 발송 중 예외: callbackId={}, tradeId={}, stage={}, reason={}",
+                        callback.getId(), callback.getTradeId(), stage, e.getClass().getSimpleName());
             }
         }
-        log.info("결제 결과 콜백 발송 완료: target={}, sent={}, notSent={}", due.size(), sent, due.size() - sent);
+        log.info("결제 결과 콜백 발송 완료: target={}, sent={}, notSent={}, errors={}",
+                due.size(), sent, due.size() - sent, errors);
     }
 }

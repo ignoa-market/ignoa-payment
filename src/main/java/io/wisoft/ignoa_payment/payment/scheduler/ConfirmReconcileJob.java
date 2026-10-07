@@ -67,36 +67,33 @@ public class ConfirmReconcileJob {
         int errors = 0;
         for (Payment payment : targets) {
             // 한 건의 예외가 이후 건(다음 회차에도 같은 순서)을 막지 않게 건별로 격리한다.
+            String stage = "LOOKUP";
             try {
-                if (!reconcileOne(payment, now)) {
+                TossLookupResult lookup = tossClient.getByOrderId(payment.getOrderId());
+                if (lookup instanceof TossLookupResult.Failed failed) {
                     lookupFailed++;
+                    paymentMetrics.recordReconcile("LOOKUP_FAILED");
+                    log.warn("미확정 결제 재조회 실패: orderId={}, reason={}", payment.getOrderId(), failed.reason());
+                    continue;
                 }
+                if (lookup instanceof TossLookupResult.Found found) {
+                    stage = "APPLY";
+                    tossResultApplier.apply(payment.getId(), found.payment(), now);
+                }
+                stage = "EXPIRE";
+                expireIfTooOld(payment, now);
+                stage = "RECORD_METRIC";
+                paymentMetrics.recordReconcile(paymentRepository.findById(payment.getId())
+                        .map(p -> p.getStatus().name())
+                        .orElse("MISSING"));
             } catch (RuntimeException e) {
                 errors++;
                 paymentMetrics.recordReconcile("ERROR");
-                log.error("미확정 결제 재조회 중 예외: orderId={}", payment.getOrderId(), e);
+                log.error("미확정 결제 재조회 중 예외: orderId={}, stage={}, reason={}",
+                        payment.getOrderId(), stage, e.getClass().getSimpleName());
             }
         }
         log.info("미확정 결제 재조회 완료: target={}, lookupFailed={}, errors={}", targets.size(), lookupFailed, errors);
-    }
-
-    // 조회에 실패하면 false
-    private boolean reconcileOne(Payment payment, LocalDateTime now) {
-        TossLookupResult lookup = tossClient.getByOrderId(payment.getOrderId());
-
-        if (lookup instanceof TossLookupResult.Failed failed) {
-            paymentMetrics.recordReconcile("LOOKUP_FAILED");
-            log.warn("미확정 결제 재조회 실패: orderId={}, reason={}", payment.getOrderId(), failed.reason());
-            return false;
-        }
-        if (lookup instanceof TossLookupResult.Found found) {
-            tossResultApplier.apply(payment.getId(), found.payment(), now);
-        }
-        expireIfTooOld(payment, now);
-        paymentMetrics.recordReconcile(paymentRepository.findById(payment.getId())
-                .map(p -> p.getStatus().name())
-                .orElse("MISSING"));
-        return true;
     }
 
     // 이미 결론 난 결제는 markFailed의 조건부 UPDATE가 0건으로 끝난다.

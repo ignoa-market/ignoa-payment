@@ -48,10 +48,9 @@ public class TossResultApplier {
             // 같은 trade에 이미 성공 결제가 있다. api의 CONFIRMING 가드가 있어 사실상 일어나지 않는 최후 방어선.
             boolean canceled = tossClient.cancel(tossPayment.paymentKey(), "동일 주문 중복 결제 자동 취소");
             if (canceled) {
-                log.error("중복 결제 자동 취소 완료: paymentId={}, paymentKey={}", paymentId, tossPayment.paymentKey());
+                log.warn("중복 결제 자동 취소 완료: paymentId={}", paymentId);
             } else {
-                log.error("중복 결제 자동 취소 실패: paymentId={}, paymentKey={}, action=Toss 관리자에서 수동 취소",
-                        paymentId, tossPayment.paymentKey());
+                log.error("중복 결제 자동 취소 실패: paymentId={}, action=Toss 관리자에서 수동 취소", paymentId);
             }
             paymentService.markFailed(paymentId, FailureCode.ALREADY_PAID,
                     canceled ? "같은 주문에 이미 성공한 결제가 있어 자동 취소했습니다."
@@ -68,11 +67,11 @@ public class TossResultApplier {
         }
         boolean canceled = tossClient.cancel(tossPayment.paymentKey(), "실패 처리된 결제의 승인 확인으로 자동 취소");
         if (canceled) {
-            log.error("실패 처리된 결제가 승인되어 자동 취소 완료: paymentId={}, tradeId={}, paymentKey={}",
-                    paymentId, payment.getTradeId(), tossPayment.paymentKey());
+            log.warn("실패 처리된 결제가 승인되어 자동 취소 완료: paymentId={}, tradeId={}",
+                    paymentId, payment.getTradeId());
         } else {
-            log.error("실패 처리된 결제가 승인됨, 자동 취소 실패: paymentId={}, tradeId={}, paymentKey={}, action=Toss 관리자에서 수동 취소",
-                    paymentId, payment.getTradeId(), tossPayment.paymentKey());
+            log.error("실패 처리된 결제가 승인됨, 자동 취소 실패: paymentId={}, tradeId={}, action=Toss 관리자에서 수동 취소",
+                    paymentId, payment.getTradeId());
         }
     }
 
@@ -90,8 +89,13 @@ public class TossResultApplier {
     private void applyUnsupportedMethod(Long paymentId, TossPayment tossPayment, LocalDateTime now) {
         // 가상계좌는 범위 밖이다. 발급된 계좌를 취소해 입금이 들어오지 않게 한다.
         boolean canceled = tossClient.cancel(tossPayment.paymentKey(), "지원하지 않는 결제수단");
-        log.error("지원하지 않는 결제수단 승인: paymentId={}, tossStatus={}, canceled={}",
-                paymentId, tossPayment.status(), canceled);
+        if (canceled) {
+            log.warn("지원하지 않는 결제수단 자동 취소 완료: paymentId={}, tossStatus={}",
+                    paymentId, tossPayment.status());
+        } else {
+            log.error("지원하지 않는 결제수단 자동 취소 실패: paymentId={}, tossStatus={}, action=Toss 관리자에서 수동 확인",
+                    paymentId, tossPayment.status());
+        }
         paymentService.markFailed(paymentId, FailureCode.TOSS_REJECTED,
                 "지원하지 않는 결제수단입니다.", tossPayment.status(), now);
     }
