@@ -38,6 +38,7 @@ bin/
 
 # Environment
 .env
+deploy/alloy/alloy.env
 
 # Database
 data-dev.sql

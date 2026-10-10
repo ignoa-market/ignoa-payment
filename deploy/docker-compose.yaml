@@ -1,0 +1,36 @@
+services:
+  app:
+    image: ghcr.io/ignoa-market/ignoa-payment:${IMAGE_TAG:-prod}
+    container_name: ignoa-payment
+    env_file: .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      TZ: Asia/Seoul
+      JAVA_TOOL_OPTIONS: -javaagent:/app/opentelemetry-javaagent.jar
+      OTEL_SERVICE_NAME: ignoa-payment
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+    ports:
+      - "48080:48080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:48080/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.20.0
+    container_name: ignoa-payment-alloy
+    command: run /etc/alloy/config.alloy --storage.path=/var/lib/alloy/data
+    env_file: alloy/alloy.env
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    restart: unless-stopped
+
+volumes:
+  alloy-data:

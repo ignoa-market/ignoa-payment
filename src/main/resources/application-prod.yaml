@@ -12,6 +12,15 @@ spring:
     show-sql: false
     open-in-view: false
 
+management:
+  metrics:
+    tags:
+      application: ignoa-payment
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        hikaricp.connections.acquire: true
+
 ignoa:
   cloudfront-origin:
     enabled: true
@@ -22,3 +31,4 @@ sentry:
   logging:
     minimum-event-level: error
     minimum-breadcrumb-level: info
+  context-tags: trace_id

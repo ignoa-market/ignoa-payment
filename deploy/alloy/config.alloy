@@ -1,0 +1,146 @@
+// ===== 로그: Docker 컨테이너 로그 → Loki =====
+
+// 1) 컨테이너 목록 조회
+discovery.docker "local" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// 2) 라벨 규칙: 컨테이너 이름 "/ignoa-payment" → container="ignoa-payment"
+discovery.relabel "docker" {
+  targets = []  // 규칙만 정의, 적용은 3)에서
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+// 3) 로그 수집: 1)의 컨테이너 로그에 2)의 라벨을 붙여 4)로 전달
+loki.source.docker "default" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.local.targets
+  relabel_rules = discovery.relabel.docker.rules
+  labels        = {"host" = "ignoa-payment-ec2"}
+  forward_to    = [loki.write.cloud.receiver]
+}
+
+// 4) Grafana Cloud Loki로 전송
+loki.write "cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_LOKI_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_LOKI_USER")
+      password = sys.env("GRAFANA_CLOUD_TOKEN")
+    }
+  }
+}
+
+// ===== 지표: /actuator/prometheus → Mimir =====
+
+// 5) 지표 수집: 같은 compose 네트워크라 서비스 이름(app)으로 접근
+prometheus.scrape "ignoa_payment" {
+  targets         = [{"__address__" = "app:48080"}]
+  metrics_path    = "/actuator/prometheus"
+  scrape_interval = "60s"
+  job_name        = "ignoa-payment"
+  forward_to      = [prometheus.remote_write.cloud.receiver]
+}
+
+// 6) Grafana Cloud Mimir로 전송
+prometheus.remote_write "cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_PROM_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_PROM_USER")
+      password = sys.env("GRAFANA_CLOUD_TOKEN")
+    }
+  }
+}
+
+// ===== 트레이스: OTel agent → Tempo =====
+// 흐름: 7) 수신 → 7-1) 샘플링 → 8) 배치 → 9) 전송
+
+// 7) 수신: 앱의 OTel agent가 OTLP/HTTP(4318)로 전송
+otelcol.receiver.otlp "default" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.processor.tail_sampling.default.input]
+  }
+}
+
+// 7-1) 샘플링: 트레이스를 모은 뒤 전송 여부 판단
+//      우선순위: drop > 나머지 정책 중 하나라도 일치 > 기본은 버림
+otelcol.processor.tail_sampling "default" {
+  decision_wait = "10s"  // 판단 전 대기 시간. Tempo 도착도 그만큼 늦어짐
+
+  // 모니터링 요청: 항상 버림
+  policy {
+    name = "drop-monitoring"
+    type = "drop"
+    drop {
+      drop_sub_policy {
+        name = "actuator"
+        type = "ottl_condition"
+        ottl_condition {
+          error_mode = "ignore"
+          span = [
+            "name == \"GET /actuator/health\"",
+            "name == \"GET /actuator/prometheus\"",
+          ]
+        }
+      }
+    }
+  }
+
+  // 사용자 HTTP 요청: 항상 보냄
+  policy {
+    name = "http-requests"
+    type = "ottl_condition"
+    ottl_condition {
+      error_mode = "ignore"
+      span       = ["attributes[\"http.request.method\"] != nil"]
+    }
+}
+  // 그 외(스케줄러 등): 느리거나 에러일 때만 보냄
+  policy {
+    name = "slow"
+    type = "latency"
+    latency {
+      threshold_ms = 100
+    }
+  }
+  policy {
+    name = "errors"
+    type = "status_code"
+    status_code {
+      status_codes = ["ERROR"]
+    }
+  }
+
+  output {
+    traces = [otelcol.processor.batch.default.input]
+  }
+}
+
+// 8) 배치: 여러 건을 모아 한 번에 전송
+otelcol.processor.batch "default" {
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+// 9) Grafana Cloud Tempo로 전송 (gRPC, 호스트:443)
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = sys.env("GRAFANA_CLOUD_TEMPO_URL")
+    auth     = otelcol.auth.basic.tempo.handler
+  }
+}
+
+// 9-1) Tempo 인증
+otelcol.auth.basic "tempo" {
+  username = sys.env("GRAFANA_CLOUD_TEMPO_USER")
+  password = sys.env("GRAFANA_CLOUD_TOKEN")
+}
