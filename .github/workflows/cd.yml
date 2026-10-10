@@ -70,19 +70,28 @@ jobs:
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          jq -n --arg tag "$IMAGE_TAG" '{
+          COMPOSE_B64=$(base64 -w0 deploy/docker-compose.yaml)
+          ALLOY_B64=$(base64 -w0 deploy/alloy/config.alloy)
+          jq -n --arg tag "$IMAGE_TAG" --arg compose "$COMPOSE_B64" --arg alloy "$ALLOY_B64" '{
             commands: [
               "set -eu",
               "cd /home/ubuntu/ignoa/ignoa-payment",
               "export IMAGE_TAG=\($tag)",
+              "printf %s \($compose) | base64 -d > docker-compose.yaml",
+              "mkdir -p alloy",
+              "printf %s \($alloy) | base64 -d > alloy/config.alloy.new",
+              "if cmp -s alloy/config.alloy.new alloy/config.alloy; then rm alloy/config.alloy.new; ALLOY_CHANGED=0; else cat alloy/config.alloy.new > alloy/config.alloy; rm alloy/config.alloy.new; ALLOY_CHANGED=1; fi",
               "umask 077",
               "aws ssm get-parameters-by-path --path /ignoa/prod/payment/ --with-decryption --region ap-northeast-2 --query '"'"'Parameters[].[Name,Value]'"'"' --output text | awk -F'"'"'\\t'"'"' '"'"'{ sub(/.*\\//,\"\",$1); print $1\"=\"$2 }'"'"' > .env.tmp",
               "[ \"$(wc -l < .env.tmp)\" -eq 11 ] || { echo '"'"'Parameter Store 조회 실패'"'"'; rm -f .env.tmp; exit 1; }",
               "mv .env.tmp .env",
               "docker compose pull",
               "docker compose up -d",
-              "for i in $(seq 1 36); do curl -fsS localhost:48080/actuator/health 2>/dev/null | grep -q UP && echo HEALTHY && exit 0; sleep 5; done",
-              "echo UNHEALTHY; docker compose ps; docker compose logs --tail=80 app; exit 1"
+              "if [ \"$ALLOY_CHANGED\" = 1 ]; then docker compose restart alloy; fi",
+              "HEALTHY=0; for i in $(seq 1 36); do if curl -fsS localhost:48080/actuator/health 2>/dev/null | grep -q UP; then HEALTHY=1; break; fi; sleep 5; done",
+              "if [ \"$HEALTHY\" != 1 ]; then echo UNHEALTHY; docker compose ps; docker compose logs --tail=80 app; exit 1; fi",
+              "echo HEALTHY",
+              "docker images ghcr.io/ignoa-market/ignoa-payment --format \"{{.CreatedAt}}\t{{.Tag}}\" | sort -r | cut -f2 | grep -v -x -e \"$IMAGE_TAG\" -e \"<none>\" | tail -n +2 | xargs -r -I{} docker rmi ghcr.io/ignoa-market/ignoa-payment:{} || echo \"이전 이미지 정리 실패\""
             ]
           }' > params.json
 
