@@ -22,3 +22,4 @@ sentry:
   logging:
     minimum-event-level: error
     minimum-breadcrumb-level: info
+  context-tags: trace_id
