@@ -25,7 +25,7 @@
 ### 반드시 지켜야 할 규칙
 
 1. 결제 금액과 상품명은 클라이언트 입력을 신뢰하지 않고 `ignoa-api`의 거래에서 가져옵니다.
-2. 승인 요청 전에 거래를 `CONFIRMING`으로 변경하고 현재 `order_id`를 저장합니다.
+2. 승인 요청 전에 거래를 `PAYMENT_CONFIRMING`으로 변경하고 현재 `order_id`를 저장합니다.
 3. 승인 결과는 응답과 콜백 양쪽으로 올 수 있으므로 멱등하게 반영합니다.
 4. 현재 거래의 `confirming_order_id`와 다른 결과는 이전 결제 시도의 결과이므로 무시합니다.
 5. 승인 요청의 5xx, 네트워크 오류, 타임아웃은 실패가 아니라 **결과 미확정**으로 취급합니다.
@@ -45,7 +45,7 @@
 
 3. 결제 승인
    FE → ignoa-api
-   ignoa-api가 거래를 CONFIRMING으로 변경하고 order_id 저장
+   ignoa-api가 거래를 PAYMENT_CONFIRMING으로 변경하고 order_id 저장
    ignoa-api → ignoa-payment
    POST /internal/payments/confirm
 
@@ -101,13 +101,13 @@ Content-Type: application/json
 처리 순서:
 
 1. 구매자와 거래 상태를 다시 검증합니다.
-2. 거래를 `PAYMENT_PENDING → CONFIRMING`으로 조건부 변경합니다.
+2. 거래를 `PAYMENT_PENDING → PAYMENT_CONFIRMING`으로 조건부 변경합니다.
 3. 거래에 `confirming_order_id`와 승인 시작 시각을 저장합니다.
 4. 즉시구매 거래라면 상품을 예약합니다.
 5. 결제 서버의 승인 API를 호출합니다.
 6. 응답 상태에 따라 거래 결과를 반영합니다.
 
-동시에 두 승인 요청이 들어오더라도 한 요청만 `CONFIRMING` 전이에 성공해야 합니다.
+동시에 두 승인 요청이 들어오더라도 한 요청만 `PAYMENT_CONFIRMING` 전이에 성공해야 합니다.
 
 ### 3.3 승인 결과 처리
 
@@ -115,7 +115,7 @@ Content-Type: application/json
 | --- | --- |
 | `DONE` | 현재 `order_id`가 맞으면 거래를 `PAID`로 변경하고 상품 후처리 수행 |
 | `FAILED` | 현재 `order_id`가 맞으면 거래 유형에 맞는 실패 상태로 변경 |
-| `UNKNOWN` | `CONFIRMING`을 유지하고 콜백 또는 상태 조회를 기다림 |
+| `UNKNOWN` | `PAYMENT_CONFIRMING`을 유지하고 콜백 또는 상태 조회를 기다림 |
 | 결제 서버 4xx | Toss 호출 전 거절이므로 승인 시작 상태를 되돌리고 FE에 오류 반환 |
 | 결제 서버 5xx·타임아웃·연결 오류 | Toss에서 승인됐을 수 있으므로 `UNKNOWN`으로 취급 |
 
@@ -129,7 +129,7 @@ Content-Type: application/json
 `DONE` 또는 `FAILED`를 반영할 때는 반드시 아래 조건을 함께 검사해야 합니다.
 
 ```text
-trade.status == CONFIRMING
+trade.status == PAYMENT_CONFIRMING
 trade.confirming_order_id == result.order_id
 ```
 
@@ -169,11 +169,11 @@ Content-Type: application/json
 
 ### 3.5 정체 거래 복구
 
-승인 응답과 콜백을 모두 받지 못하면 거래가 `CONFIRMING`에 남을 수 있습니다. `ignoa-api`는 주기적으로 이런 거래를 찾아 결제 상태 조회 API를 호출해야 합니다.
+승인 응답과 콜백을 모두 받지 못하면 거래가 `PAYMENT_CONFIRMING`에 남을 수 있습니다. `ignoa-api`는 주기적으로 이런 거래를 찾아 결제 상태 조회 API를 호출해야 합니다.
 
 현재 구현 기준:
 
-- 10분 이상 `CONFIRMING`인 거래를 대상으로 합니다.
+- 10분 이상 `PAYMENT_CONFIRMING`인 거래를 대상으로 합니다.
 - 스케줄러는 5분마다 실행됩니다.
 - 조회 결과가 `READY`면 결제 서버에 승인 요청이 도착하지 않은 것이므로 승인 시작 상태를 되돌립니다.
 - `DONE` 또는 `FAILED`면 일반 결과 처리와 동일하게 반영합니다.
@@ -185,7 +185,7 @@ Content-Type: application/json
 ### ignoa-api 거래 상태
 
 ```text
-PAYMENT_PENDING ── 승인 시작 ──> CONFIRMING ── 결제 성공 ──> PAID
+PAYMENT_PENDING ── 승인 시작 ──> PAYMENT_CONFIRMING ── 결제 성공 ──> PAID
        ▲                           │
        │                           ├─ 경매 결제 실패 ───────┘
        │                           │
@@ -211,9 +211,9 @@ PAYMENT_PENDING ── 승인 시작 ──> CONFIRMING ── 결제 성공 ─
 | 상황 | 해석 | 조치 |
 | --- | --- | --- |
 | 준비 API 실패 | 결제 시도 생성 여부를 신뢰할 수 없음 | 거래는 `PAYMENT_PENDING` 유지, 사용자가 다시 준비 가능 |
-| 승인 API 400·404·409 | Toss 호출 전 요청 거절 | `CONFIRMING`을 되돌리고 오류 반환 |
-| 승인 API 5xx 또는 타임아웃 | Toss 승인 여부 미확정 | `CONFIRMING` 유지, 콜백·상태 조회 대기 |
-| 승인 응답 `UNKNOWN` | 결제 서버도 결과 확인 중 | `CONFIRMING` 유지 |
+| 승인 API 400·404·409 | Toss 호출 전 요청 거절 | `PAYMENT_CONFIRMING`을 되돌리고 오류 반환 |
+| 승인 API 5xx 또는 타임아웃 | Toss 승인 여부 미확정 | `PAYMENT_CONFIRMING` 유지, 콜백·상태 조회 대기 |
+| 승인 응답 `UNKNOWN` | 결제 서버도 결과 확인 중 | `PAYMENT_CONFIRMING` 유지 |
 | 콜백 중복 | 정상적인 재전송 가능 | 멱등 처리 후 `2xx` 반환 |
 | 이전 `order_id` 콜백 | 과거 결제 시도의 늦은 결과 | 현재 거래 상태를 변경하지 않고 `2xx` 반환 |
 | 결제 서버 조회 실패 | 일시 장애 가능 | 상태를 변경하지 않고 다음 주기 재시도 |
@@ -262,13 +262,13 @@ PAYMENT_PENDING ── 승인 시작 ──> CONFIRMING ── 결제 성공 ─
 
 - [ ] 결제 준비 시 구매자, 거래 상태, 결제 기한을 검증한다.
 - [ ] 금액과 상품명은 `ignoa-api` 데이터로 만든다.
-- [ ] 승인 전에 거래를 조건부로 `CONFIRMING`으로 변경한다.
+- [ ] 승인 전에 거래를 조건부로 `PAYMENT_CONFIRMING`으로 변경한다.
 - [ ] 현재 `order_id`를 거래에 저장한다.
 - [ ] 승인 결과 `DONE`, `FAILED`, `UNKNOWN`을 구분한다.
 - [ ] 4xx와 5xx·타임아웃을 다르게 처리한다.
 - [ ] 콜백 API에 내부 API 키 검증을 적용한다.
 - [ ] 승인 응답과 콜백을 같은 멱등 처리 로직으로 반영한다.
-- [ ] 정체된 `CONFIRMING` 거래를 상태 조회로 복구한다.
+- [ ] 정체된 `PAYMENT_CONFIRMING` 거래를 상태 조회로 복구한다.
 
 ### 테스트
 
@@ -289,7 +289,7 @@ PAYMENT_PENDING ── 승인 시작 ──> CONFIRMING ── 결제 성공 ─
 - [ ] `ignoa-payment`에서 `ignoa-api` 콜백 주소에 접근할 수 있다.
 - [ ] `ignoa-api`에서 결제 서버 내부 주소에 접근할 수 있다.
 - [ ] 결제 서버의 콜백 `DEAD` 로그를 모니터링한다.
-- [ ] 장시간 `CONFIRMING`인 거래를 탐지할 수 있다.
+- [ ] 장시간 `PAYMENT_CONFIRMING`인 거래를 탐지할 수 있다.
 - [ ] 결제 성공 건수와 거래 `PAID` 건수를 정기적으로 대조한다.
 
 ## 8. 내부 API 계약
